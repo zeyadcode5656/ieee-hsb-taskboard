@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>IEEE HSB — Board Tasks</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<!-- Firebase (free tier) — this is what lets the board be shared across everyone's browsers -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+
+<style>
+  :root{
+    --bg:#F3F6FA;
+    --surface:#FFFFFF;
+    --surface-alt:#EAF0F7;
+    --ink:#10233F;
+    --ink-soft:#5A6C86;
+    --line:#D8E2EE;
+    --accent:#0B5FA5;
+    --accent-deep:#06407A;
+    --amber:#E8A33D;
+    --green:#2F9E44;
+    --red:#D64545;
+    --radius:10px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:'Inter',sans-serif;
+    min-height:100vh;
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3,.display{
+    font-family:'Space Grotesk',sans-serif;
+    letter-spacing:-0.01em;
+  }
+  .mono{font-family:'IBM Plex Mono',monospace;}
+  #app{min-height:100vh;}
+
+  /* ---- circuit trace divider (signature element) ---- */
+  .trace{ display:flex; align-items:center; gap:0; margin:18px 0; }
+  .trace::before,.trace::after{ content:''; flex:1; height:1px; background:var(--line); }
+  .trace-node{ width:7px;height:7px;background:var(--accent); transform:rotate(45deg); margin:0 10px; flex-shrink:0; }
+
+  /* ---- login / setup screens ---- */
+  .login-wrap{
+    min-height:100vh; display:flex; flex-direction:column; align-items:center;
+    justify-content:center; padding:32px 16px;
+  }
+  .login-card{
+    background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
+    padding:32px; max-width:480px; width:100%;
+  }
+  .eyebrow{
+    font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:0.12em;
+    text-transform:uppercase; color:var(--accent); margin:0 0 6px 0;
+  }
+  .login-card h1{font-size:26px; margin:0 0 4px 0; color:var(--ink);}
+  .login-sub{color:var(--ink-soft); font-size:14px; margin:0 0 22px 0;}
+  select,input[type=password],input[type=text],input[type=date],textarea{
+    width:100%; padding:11px 12px; border:1px solid var(--line); border-radius:8px;
+    background:var(--surface); font-family:'Inter',sans-serif; font-size:14px; color:var(--ink);
+    margin-top:6px;
+  }
+  select:focus,input:focus,textarea:focus{
+    outline:2px solid var(--accent); outline-offset:1px; border-color:var(--accent);
+  }
+  label{font-size:12.5px; color:var(--ink-soft); font-weight:500; display:block; margin-top:14px;}
+  label:first-of-type{margin-top:0;}
+  .btn{
+    border:none; border-radius:8px; padding:11px 18px; font-family:'Inter',sans-serif;
+    font-weight:600; font-size:14px; cursor:pointer; transition:opacity .15s ease;
+  }
+  .btn:hover{opacity:0.88;}
+  .btn:focus-visible{outline:2px solid var(--accent-deep); outline-offset:2px;}
+  .btn-primary{background:var(--accent); color:#fff; width:100%; margin-top:20px;}
+  .btn-ghost{background:var(--surface-alt); color:var(--ink);}
+  .btn-danger{background:#FBEAEA; color:var(--red);}
+  .error-text{color:var(--red); font-size:13px; margin-top:10px;}
+  .hint-text{color:var(--ink-soft); font-size:12.5px; margin-top:14px; line-height:1.5;}
+  code.inline{background:var(--surface-alt); padding:1px 6px; border-radius:4px; font-family:'IBM Plex Mono',monospace; font-size:12.5px;}
+
+  /* ---- header / dashboard ---- */
+  header.top{
+    background:var(--surface); border-bottom:1px solid var(--line);
+    padding:16px 28px; display:flex; align-items:center; justify-content:space-between;
+    position:sticky; top:0; z-index:5; flex-wrap:wrap; gap:10px;
+  }
+  .brand{display:flex; flex-direction:column;}
+  .brand .name{font-size:17px; font-weight:600; font-family:'Space Grotesk',sans-serif;}
+  .brand .tag{font-size:11.5px; color:var(--ink-soft); font-family:'IBM Plex Mono',monospace;}
+  .who{display:flex; align-items:center; gap:12px; flex-wrap:wrap;}
+  .who .role-chip{
+    background:var(--surface-alt); border-radius:20px; padding:6px 12px; font-size:12.5px;
+    font-weight:500; color:var(--accent-deep);
+  }
+  main{max-width:1180px; margin:0 auto; padding:26px 28px 60px;}
+
+  .toolbar{display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:6px;}
+  .scope-toggle{display:flex; gap:6px; background:var(--surface-alt); padding:4px; border-radius:9px;}
+  .scope-toggle button{
+    border:none; background:transparent; padding:7px 14px; border-radius:6px; font-size:13px;
+    font-weight:600; font-family:'Inter',sans-serif; color:var(--ink-soft); cursor:pointer;
+  }
+  .scope-toggle button.active{background:var(--surface); color:var(--accent-deep); box-shadow:0 1px 2px rgba(16,35,63,0.08);}
+
+  .board{display:grid; grid-template-columns:1fr 1fr 1fr; gap:18px; margin-top:18px;}
+  @media (max-width:820px){ .board{grid-template-columns:1fr;} }
+  .col{background:var(--surface-alt); border-radius:var(--radius); padding:14px; min-height:120px;}
+  .col-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; padding:0 2px;}
+  .col-title{font-size:12.5px; font-weight:600; text-transform:uppercase; letter-spacing:0.06em; font-family:'IBM Plex Mono',monospace;}
+  .col-count{font-size:12px; color:var(--ink-soft);}
+  .col[data-status="requested"] .col-title{color:var(--amber);}
+  .col[data-status="in_progress"] .col-title{color:var(--accent);}
+  .col[data-status="done"] .col-title{color:var(--green);}
+
+  .card{
+    background:var(--surface); border:1px solid var(--line); border-radius:9px;
+    padding:13px 14px; margin-bottom:10px;
+  }
+  .card-title{font-size:14.5px; font-weight:600; margin:0 0 6px 0; line-height:1.35;}
+  .card-desc{font-size:13px; color:var(--ink-soft); margin:0 0 10px 0; line-height:1.5;}
+  .card-meta{display:flex; align-items:center; flex-wrap:wrap; gap:6px; margin-bottom:10px;}
+  .pill{ font-size:11px; padding:3px 9px; border-radius:20px; font-family:'IBM Plex Mono',monospace; font-weight:500; }
+  .flow{font-size:12px; color:var(--ink-soft); margin-bottom:10px;}
+  .flow b{color:var(--ink); font-weight:600;}
+  .card-actions{display:flex; gap:6px; flex-wrap:wrap;}
+  .card-actions select{width:auto; margin:0; padding:6px 8px; font-size:12px;}
+  .card-actions .btn{padding:6px 10px; font-size:12px;}
+  .empty-col{color:var(--ink-soft); font-size:12.5px; text-align:center; padding:18px 6px;}
+
+  /* modal */
+  .modal-backdrop{
+    position:fixed; inset:0; background:rgba(16,35,63,0.45); display:flex;
+    align-items:center; justify-content:center; padding:20px; z-index:20;
+  }
+  .modal{background:var(--surface); border-radius:var(--radius); padding:26px; max-width:460px; width:100%; max-height:88vh; overflow-y:auto; position:relative;}
+  .modal h2{font-size:19px; margin:0 0 4px 0;}
+  .modal-sub{font-size:13px; color:var(--ink-soft); margin:0 0 18px 0;}
+  .modal-actions{display:flex; gap:10px; margin-top:22px;}
+  .modal-actions .btn{flex:1;}
+  .close-x{
+    position:absolute; top:14px; right:16px; background:none; border:none; font-size:20px;
+    color:var(--ink-soft); cursor:pointer;
+  }
+
+  .admin-list{display:flex; flex-direction:column; gap:10px; margin-top:10px;}
+  .admin-row{display:flex; align-items:center; justify-content:space-between; gap:10px; background:var(--surface-alt); border-radius:8px; padding:10px 12px;}
+  .admin-row .who-name{font-size:13.5px; font-weight:600;}
+  .admin-row .who-role{font-size:11.5px; color:var(--ink-soft); font-family:'IBM Plex Mono',monospace;}
+  .admin-row .btn{padding:6px 10px; font-size:12px;}
+
+  .loading{display:flex; align-items:center; justify-content:center; min-height:100vh; color:var(--ink-soft); font-size:14px; text-align:center; padding:0 20px;}
+  .toast{
+    position:fixed; bottom:22px; left:50%; transform:translateX(-50%); background:var(--ink);
+    color:#fff; padding:10px 18px; border-radius:8px; font-size:13.5px; z-index:40;
+  }
+  .setup-list{text-align:left; font-size:13.5px; line-height:1.7; color:var(--ink-soft); max-width:520px;}
+  .setup-list code{background:var(--surface-alt); padding:1px 6px; border-radius:4px; font-family:'IBM Plex Mono',monospace;}
+</style>
+</head>
+<body>
+<div id="app"><div class="loading">Loading board…</div></div>
+
+<script>
+/* =========================================================================
+   1) PASTE YOUR FIREBASE CONFIG HERE
+   Get this from: Firebase console → Project settings → Your apps → Web app
+   ========================================================================= */
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyDjg0miatnkEnVybPa6Lnk5XHHhNp3b8Zo",
+  authDomain: "ieee-hsb-taskboard.firebaseapp.com",
+  projectId: "ieee-hsb-taskboard",
+  storageBucket: "ieee-hsb-taskboard.firebasestorage.app",
+  messagingSenderId: "672666247059",
+  appId: "1:672666247059:web:d04c58ab8a75780fb25266"
+};
+/* ========================================================================= */
+
+const ROLES = [
+  { id:'chair',      label:'Chair',                     seesAll:true,  isAdmin:false, committee:null },
+  { id:'vicechair',  label:'Vice Chair',                 seesAll:true,  isAdmin:false, committee:null },
+  { id:'treasurer',  label:'Treasurer',                  seesAll:true,  isAdmin:true,  committee:null },
+  { id:'secretary',  label:'Secretary',                  seesAll:true,  isAdmin:false, committee:null },
+  { id:'comsoc',     label:'Technical Chair — ComSoc',   seesAll:false, isAdmin:false, committee:'ComSoc' },
+  { id:'ras',        label:'Technical Chair — RAS',      seesAll:false, isAdmin:false, committee:'RAS' },
+  { id:'pes',        label:'Technical Chair — PES',      seesAll:false, isAdmin:false, committee:'PES' },
+  { id:'wie',        label:'Technical Chair — WIE',      seesAll:false, isAdmin:false, committee:'WIE' },
+  { id:'cs',         label:'Technical Chair — CS',       seesAll:false, isAdmin:false, committee:'CS' },
+  { id:'webmaster',  label:'Webmaster',                  seesAll:false, isAdmin:false, committee:null },
+];
+const COMMITTEE_COLOR = { ComSoc:'#0B5FA5', RAS:'#E8734A', PES:'#2F9E44', WIE:'#C2419D', CS:'#6C5CE7' };
+const COMMITTEE_BG    = { ComSoc:'#0B5FA51A', RAS:'#E8734A1A', PES:'#2F9E441A', WIE:'#C2419D1A', CS:'#6C5CE71A' };
+const DEFAULT_PASSWORD = 'hsb2026';
+const STATUS_LABEL = { requested:'Requested', in_progress:'In Progress', done:'Done' };
+
+let members = {};
+let tasks = [];
+let currentUser = null;
+let scope = 'mine';
+let toastTimer = null;
+let db = null;
+let unsubTasks = null;
+let unsubMembers = null;
+
+const app = document.getElementById('app');
+
+function showToast(msg){
+  clearTimeout(toastTimer);
+  let el = document.querySelector('.toast');
+  if(!el){ el = document.createElement('div'); el.className='toast'; document.body.appendChild(el); }
+  el.textContent = msg;
+  toastTimer = setTimeout(()=> el.remove(), 2400);
+}
+function escapeHtml(s){
+  const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML;
+}
+function memberList(){
+  return Object.values(members).sort((a,b)=> ROLES.findIndex(r=>r.id===a.roleId) - ROLES.findIndex(r=>r.id===b.roleId));
+}
+function shortNameFor(roleId){
+  const m = members[roleId];
+  if(!m) return roleId;
+  return m.displayName || m.label;
+}
+
+/* ---------------- setup-needed screen ---------------- */
+function renderSetupNeeded(){
+  app.innerHTML = `
+    <div class="login-wrap">
+      <div class="login-card">
+        <p class="eyebrow">Setup required</p>
+        <h1>Connect a Firebase project</h1>
+        <p class="login-sub">This page needs its own free Firestore database before it can save anything. Open <code class="inline">ieee-hsb-taskboard.html</code> in a text editor and fill in the <code class="inline">FIREBASE_CONFIG</code> object near the top of the file.</p>
+        <div class="setup-list">
+          1. Create a project at <code>console.firebase.google.com</code> (free)<br>
+          2. Build → Firestore Database → Create database<br>
+          3. Build → Authentication → Sign-in method → enable <b>Anonymous</b><br>
+          4. Project settings → Your apps → add a Web app → copy the config object<br>
+          5. Paste it into <code>FIREBASE_CONFIG</code> in this file, save, re-upload<br>
+          6. Set Firestore security rules to require <code>request.auth != null</code>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+/* ---------------- boot ---------------- */
+(async function boot(){
+  if(!FIREBASE_CONFIG.apiKey || FIREBASE_CONFIG.apiKey.startsWith('PASTE_')){
+    renderSetupNeeded();
+    return;
+  }
+  try{
+    firebase.initializeApp(FIREBASE_CONFIG);
+    db = firebase.firestore();
+    await firebase.auth().signInAnonymously();
+    await ensureMembersSeeded();
+    members = await fetchMembersOnce();
+    tasks = [];
+    renderLogin();
+  }catch(e){
+    console.error(e);
+    app.innerHTML = `<div class="loading">Couldn't connect to the database.<br><br>${escapeHtml(e.message || 'Unknown error')}<br><br>Check your FIREBASE_CONFIG values and Firestore security rules, then refresh.</div>`;
+  }
+})();
+
+async function ensureMembersSeeded(){
+  const snap = await db.collection('members').get();
+  if(!snap.empty) return;
+  const batch = db.batch();
+  ROLES.forEach(r=>{
+    const ref = db.collection('members').doc(r.id);
+    batch.set(ref, {
+      roleId:r.id, label:r.label, displayName:'', password:DEFAULT_PASSWORD,
+      seesAll:r.seesAll, isAdmin:r.isAdmin, committee:r.committee
+    });
+  });
+  await batch.commit();
+}
+async function fetchMembersOnce(){
+  const snap = await db.collection('members').get();
+  const m = {};
+  snap.docs.forEach(d=> m[d.id] = d.data());
+  return m;
+}
+function startLiveListeners(){
+  unsubMembers = db.collection('members').onSnapshot(snap=>{
+    const m = {};
+    snap.docs.forEach(d=> m[d.id] = d.data());
+    members = m;
+    if(currentUser) renderDashboard();
+  });
+  unsubTasks = db.collection('tasks').onSnapshot(snap=>{
+    tasks = snap.docs.map(d=>({ id:d.id, ...d.data() }));
+    if(currentUser) renderDashboard();
+  });
+}
+function stopLiveListeners(){
+  if(unsubMembers) unsubMembers();
+  if(unsubTasks) unsubTasks();
+  unsubMembers = null; unsubTasks = null;
+}
+
+/* ---------------- render: login ---------------- */
+function renderLogin(err){
+  app.innerHTML = `
+    <div class="login-wrap">
+      <div class="login-card">
+        <p class="eyebrow">IEEE HSB · High Board</p>
+        <h1>Board Task Log</h1>
+        <p class="login-sub">Sign in as yourself to see what's been asked of you — and ask others directly.</p>
+        <form id="loginForm">
+          <label for="who">I am</label>
+          <select id="who" required>
+            <option value="" disabled selected>Select your seat…</option>
+            ${memberList().map(m=>`<option value="${m.roleId}">${escapeHtml(m.displayName ? m.displayName+' — '+m.label : m.label)}</option>`).join('')}
+          </select>
+          <label for="pw">Password</label>
+          <input type="password" id="pw" required placeholder="Your password" />
+          <button class="btn btn-primary" type="submit">Sign in</button>
+          ${err ? `<p class="error-text">${escapeHtml(err)}</p>` : ''}
+        </form>
+        <p class="hint-text">First time here? Default password is <span class="mono">${DEFAULT_PASSWORD}</span> — set your own from the menu once you're in. The Treasurer can reset anyone's password or add board members.</p>
+      </div>
+    </div>
+  `;
+  document.getElementById('loginForm').addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const who = document.getElementById('who').value;
+    const pw = document.getElementById('pw').value;
+    if(!who){ return; }
+    try{
+      const fresh = await db.collection('members').doc(who).get();
+      const data = fresh.data();
+      if(!data || data.password !== pw){
+        renderLogin('Wrong password. Try again, or ask the Treasurer to reset it.');
+        return;
+      }
+      members[who] = data;
+      currentUser = who;
+      scope = data.seesAll ? 'all' : 'mine';
+      if(!data.displayName){
+        const nm = prompt('Quick setup — what name should we show for you?');
+        if(nm && nm.trim()){
+          await db.collection('members').doc(who).update({ displayName: nm.trim() });
+          members[who].displayName = nm.trim();
+        }
+      }
+      startLiveListeners();
+      renderDashboard();
+    }catch(e){
+      console.error(e);
+      renderLogin('Could not reach the database — check your connection and try again.');
+    }
+  });
+}
+
+/* ---------------- render: dashboard ---------------- */
+function visibleTasks(){
+  const me = members[currentUser];
+  if(!me) return [];
+  if(me.seesAll && scope==='all') return tasks;
+  return tasks.filter(t => t.requestedBy===currentUser || t.assignedTo===currentUser);
+}
+
+function renderDashboard(){
+  const me = members[currentUser];
+  if(!me){ currentUser=null; stopLiveListeners(); renderLogin(); return; }
+  const vis = visibleTasks();
+  const cols = ['requested','in_progress','done'];
+
+  app.innerHTML = `
+    <header class="top">
+      <div class="brand">
+        <span class="name">IEEE HSB Board Tasks</span>
+        <span class="tag">HELWAN STUDENT BRANCH</span>
+      </div>
+      <div class="who">
+        <span class="role-chip">${escapeHtml(shortNameFor(currentUser))} · ${escapeHtml(me.label)}</span>
+        ${me.isAdmin ? `<button class="btn btn-ghost" id="adminBtn">Manage board</button>` : ''}
+        <button class="btn btn-ghost" id="pwBtn">Change password</button>
+        <button class="btn btn-ghost" id="logoutBtn">Sign out</button>
+      </div>
+    </header>
+    <main>
+      <div class="toolbar">
+        <div>
+          ${me.seesAll ? `
+            <div class="scope-toggle">
+              <button data-scope="all" class="${scope==='all'?'active':''}">All tasks</button>
+              <button data-scope="mine" class="${scope==='mine'?'active':''}">Just mine</button>
+            </div>
+          ` : `<p class="hint-text" style="margin:0;">Showing tasks you asked for, and tasks asked of you.</p>`}
+        </div>
+        <button class="btn btn-primary" id="newTaskBtn" style="width:auto; margin-top:0;">+ New task</button>
+      </div>
+      <div class="trace"><span class="trace-node"></span></div>
+      <div class="board">
+        ${cols.map(status=>{
+          const items = vis.filter(t=>t.status===status);
+          return `
+            <div class="col" data-status="${status}">
+              <div class="col-head">
+                <span class="col-title">${STATUS_LABEL[status]}</span>
+                <span class="col-count">${items.length}</span>
+              </div>
+              ${items.length ? items.map(t=>renderCard(t)).join('') : `<div class="empty-col">Nothing here.</div>`}
+            </div>
+          `;
+        }).join('')}
+      </div>
+    </main>
+  `;
+
+  document.getElementById('logoutBtn').onclick = ()=>{ currentUser=null; stopLiveListeners(); renderLogin(); };
+  document.getElementById('newTaskBtn').onclick = renderNewTaskModal;
+  document.getElementById('pwBtn').onclick = renderChangePasswordModal;
+  if(me.isAdmin) document.getElementById('adminBtn').onclick = renderAdminModal;
+  const toggle = document.querySelector('.scope-toggle');
+  if(toggle){
+    toggle.querySelectorAll('button').forEach(b=>{
+      b.onclick = ()=>{ scope = b.dataset.scope; renderDashboard(); };
+    });
+  }
+  vis.forEach(t=>{
+    const statusSel = document.getElementById('status-'+t.id);
+    if(statusSel){
+      statusSel.onchange = async ()=>{
+        try{ await db.collection('tasks').doc(t.id).update({ status: statusSel.value }); }
+        catch(e){ showToast('Could not update — try again.'); }
+      };
+    }
+    const delBtn = document.getElementById('del-'+t.id);
+    if(delBtn){
+      delBtn.onclick = async ()=>{
+        if(confirm("Delete this task? This can't be undone.")){
+          try{ await db.collection('tasks').doc(t.id).delete(); }
+          catch(e){ showToast('Could not delete — try again.'); }
+        }
+      };
+    }
+  });
+}
+
+function renderCard(t){
+  const canManage = t.requestedBy===currentUser || t.assignedTo===currentUser || members[currentUser].isAdmin;
+  return `
+    <div class="card">
+      <p class="card-title">${escapeHtml(t.title)}</p>
+      ${t.description ? `<p class="card-desc">${escapeHtml(t.description)}</p>` : ''}
+      <div class="card-meta">
+        ${t.committee ? `<span class="pill" style="background:${COMMITTEE_BG[t.committee]}; color:${COMMITTEE_COLOR[t.committee]};">${t.committee}</span>` : ''}
+        ${t.dueDate ? `<span class="pill" style="background:var(--surface-alt); color:var(--ink-soft);">Due ${escapeHtml(t.dueDate)}</span>` : ''}
+      </div>
+      <p class="flow"><b>${escapeHtml(shortNameFor(t.requestedBy))}</b> asked <b>${escapeHtml(shortNameFor(t.assignedTo))}</b></p>
+      ${canManage ? `
+        <div class="card-actions">
+          <select id="status-${t.id}">
+            ${Object.keys(STATUS_LABEL).map(s=>`<option value="${s}" ${s===t.status?'selected':''}>${STATUS_LABEL[s]}</option>`).join('')}
+          </select>
+          <button class="btn btn-danger" id="del-${t.id}">Delete</button>
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+/* ---------------- modal: new task ---------------- */
+function renderNewTaskModal(){
+  const others = memberList().filter(m=>m.roleId!==currentUser);
+  const backdrop = document.createElement('div');
+  backdrop.className = 'modal-backdrop';
+  backdrop.innerHTML = `
+    <div class="modal">
+      <button class="close-x" id="closeModal">×</button>
+      <h2>Ask someone for a task</h2>
+      <p class="modal-sub">This shows up on their board right away.</p>
+      <form id="taskForm">
+        <label for="tTitle">Task</label>
+        <input type="text" id="tTitle" required placeholder="e.g. Send WIE workshop poster" />
+        <label for="tDesc">Details (optional)</label>
+        <textarea id="tDesc" rows="3" placeholder="Anything they need to know"></textarea>
+        <label for="tWho">Assign to</label>
+        <select id="tWho" required>
+          <option value="" disabled selected>Choose a board member…</option>
+          ${others.map(m=>`<option value="${m.roleId}">${escapeHtml(m.displayName? m.displayName+' — '+m.label : m.label)}</option>`).join('')}
+        </select>
+        <label for="tCommittee">Committee (optional)</label>
+        <select id="tCommittee">
+          <option value="">— None —</option>
+          ${Object.keys(COMMITTEE_COLOR).map(c=>`<option value="${c}">${c}</option>`).join('')}
+        </select>
+        <label for="tDue">Due date (optional)</label>
+        <input type="date" id="tDue" />
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" id="cancelBtn">Cancel</button>
+          <button type="submit" class="btn btn-primary" style="margin-top:0;">Send task</button>
+        </div>
+      </form>
+    </div>
+  `;
+  document.body.appendChild(backdrop);
+  const close = ()=> backdrop.remove();
+  document.getElementById('closeModal').onclick = close;
+  document.getElementById('cancelBtn').onclick = close;
+  document.getElementById('taskForm').addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const t = {
+      title: document.getElementById('tTitle').value.trim(),
+      description: document.getElementById('tDesc').value.trim(),
+      requestedBy: currentUser,
+      assignedTo: document.getElementById('tWho').value,
+      committee: document.getElementById('tCommittee').value || null,
+      dueDate: document.getElementById('tDue').value || null,
+      status: 'requested',
+      createdAt: new Date().toISOString(),
+    };
+    try{
+      await db.collection('tasks').add(t);
+      close();
+      showToast('Task sent.');
+    }catch(e){
+      showToast('Could not send — try again.');
+    }
+  });
+}
+
+/* ---------------- modal: change password ---------------- */
+function renderChangePasswordModal(){
+  const backdrop = document.createElement('div');
+  backdrop.className = 'modal-backdrop';
+  backdrop.innerHTML = `
+    <div class="modal">
+      <button class="close-x" id="closeModal">×</button>
+      <h2>Change your password</h2>
+      <form id="pwForm">
+        <label for="curPw">Current password</label>
+        <input type="password" id="curPw" required />
+        <label for="newPw">New password</label>
+        <input type="password" id="newPw" required minlength="4" />
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" id="cancelBtn">Cancel</button>
+          <button type="submit" class="btn btn-primary" style="margin-top:0;">Save</button>
+        </div>
+      </form>
+    </div>
+  `;
+  document.body.appendChild(backdrop);
+  const close = ()=> backdrop.remove();
+  document.getElementById('closeModal').onclick = close;
+  document.getElementById('cancelBtn').onclick = close;
+  document.getElementById('pwForm').addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const cur = document.getElementById('curPw').value;
+    const nw = document.getElementById('newPw').value;
+    if(members[currentUser].password !== cur){
+      showToast('Current password is wrong.');
+      return;
+    }
+    try{
+      await db.collection('members').doc(currentUser).update({ password: nw });
+      close();
+      showToast('Password updated.');
+    }catch(e){
+      showToast('Could not save — try again.');
+    }
+  });
+}
+
+/* ---------------- modal: admin (treasurer only) ---------------- */
+function renderAdminModal(){
+  const backdrop = document.createElement('div');
+  backdrop.className = 'modal-backdrop';
+  backdrop.innerHTML = `
+    <div class="modal">
+      <button class="close-x" id="closeModal">×</button>
+      <h2>Manage the board</h2>
+      <p class="modal-sub">Set names, or reset a password if someone's locked out.</p>
+      <div class="admin-list">
+        ${memberList().map(m=>`
+          <div class="admin-row">
+            <div>
+              <div class="who-name">${escapeHtml(m.displayName || '— name not set —')}</div>
+              <div class="who-role">${escapeHtml(m.label)}</div>
+            </div>
+            <div style="display:flex; gap:6px;">
+              <button class="btn btn-ghost" data-edit="${m.roleId}">Edit name</button>
+              <button class="btn btn-ghost" data-reset="${m.roleId}">Reset password</button>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+  document.body.appendChild(backdrop);
+  document.getElementById('closeModal').onclick = ()=> backdrop.remove();
+  backdrop.querySelectorAll('[data-edit]').forEach(btn=>{
+    btn.onclick = async ()=>{
+      const id = btn.dataset.edit;
+      const nm = prompt('Name for ' + members[id].label + ':', members[id].displayName || '');
+      if(nm !== null){
+        try{
+          await db.collection('members').doc(id).update({ displayName: nm.trim() });
+          backdrop.remove();
+          renderAdminModal();
+        }catch(e){ showToast('Could not save — try again.'); }
+      }
+    };
+  });
+  backdrop.querySelectorAll('[data-reset]').forEach(btn=>{
+    btn.onclick = async ()=>{
+      const id = btn.dataset.reset;
+      if(confirm(`Reset ${members[id].label}'s password to "${DEFAULT_PASSWORD}"?`)){
+        try{
+          await db.collection('members').doc(id).update({ password: DEFAULT_PASSWORD });
+          showToast('Password reset to default.');
+        }catch(e){ showToast('Could not save — try again.'); }
+      }
+    };
+  });
+}
+</script>
+</body>
+</html>
