@@ -11,6 +11,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
 <style>
   :root{
@@ -272,17 +273,20 @@ function renderSetupNeeded(){
 })();
 
 async function ensureMembersSeeded(){
-  const snap = await db.collection('members').get();
-  if(!snap.empty) return;
   const batch = db.batch();
-  ROLES.forEach(r=>{
+  let needsWrite = false;
+  for (const r of ROLES) {
     const ref = db.collection('members').doc(r.id);
-    batch.set(ref, {
-      roleId:r.id, label:r.label, displayName:'', password:DEFAULT_PASSWORD,
-      seesAll:r.seesAll, isAdmin:r.isAdmin, committee:r.committee
-    });
-  });
-  await batch.commit();
+    const doc = await ref.get();
+    if (!doc.exists) {
+      needsWrite = true;
+      batch.set(ref, {
+        roleId:r.id, label:r.label, displayName:'', password:DEFAULT_PASSWORD,
+        seesAll:r.seesAll, isAdmin:r.isAdmin, committee:r.committee
+      });
+    }
+  }
+  if (needsWrite) await batch.commit();
 }
 async function fetchMembersOnce(){
   const snap = await db.collection('members').get();
@@ -399,7 +403,10 @@ function renderDashboard(){
             </div>
           ` : `<p class="hint-text" style="margin:0;">Showing tasks you asked for, and tasks asked of you.</p>`}
         </div>
-        <button class="btn btn-primary" id="newTaskBtn" style="width:auto; margin-top:0;">+ New task</button>
+        <div style="display:flex; gap:8px;">
+          <button class="btn btn-ghost" id="exportBtn" style="width:auto; margin-top:0;">Export to Excel</button>
+          <button class="btn btn-primary" id="newTaskBtn" style="width:auto; margin-top:0;">+ New task</button>
+        </div>
       </div>
       <div class="trace"><span class="trace-node"></span></div>
       <div class="board">
@@ -421,6 +428,7 @@ function renderDashboard(){
 
   document.getElementById('logoutBtn').onclick = ()=>{ currentUser=null; stopLiveListeners(); renderLogin(); };
   document.getElementById('newTaskBtn').onclick = renderNewTaskModal;
+  document.getElementById('exportBtn').onclick = ()=> exportToExcel(vis);
   document.getElementById('pwBtn').onclick = renderChangePasswordModal;
   if(me.isAdmin) document.getElementById('adminBtn').onclick = renderAdminModal;
   const toggle = document.querySelector('.scope-toggle');
@@ -470,6 +478,37 @@ function renderCard(t){
       ` : ''}
     </div>
   `;
+}
+
+/* ---------------- export to Excel ---------------- */
+function exportToExcel(taskArray){
+  if(!taskArray.length){
+    showToast('No tasks to export.');
+    return;
+  }
+  const rows = taskArray.map(t=>({
+    'Task': t.title || '',
+    'Details': t.description || '',
+    'Requested By': shortNameFor(t.requestedBy),
+    'Assigned To': shortNameFor(t.assignedTo),
+    'Committee': t.committee || '',
+    'Status': STATUS_LABEL[t.status] || t.status || '',
+    'Due Date': t.dueDate || '',
+    'Created At': t.createdAt ? new Date(t.createdAt).toLocaleString() : '',
+  }));
+  try{
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws['!cols'] = [
+      {wch:28},{wch:36},{wch:20},{wch:20},{wch:12},{wch:14},{wch:12},{wch:20}
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Tasks');
+    const stamp = new Date().toISOString().slice(0,10);
+    XLSX.writeFile(wb, `ieee-hsb-tasks-${stamp}.xlsx`);
+  }catch(e){
+    console.error(e);
+    showToast('Could not export — try again.');
+  }
 }
 
 /* ---------------- modal: new task ---------------- */
